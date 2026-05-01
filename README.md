@@ -1,4 +1,4 @@
-# Tworzenie własnej bazy danych oraz jej analiza w języku SQL oraz R
+# Tworzenie własnej bazy danych oraz jej analiza w języku SQL i R
 
 ## 1. Użyte technologie
 
