@@ -1,0 +1,200 @@
+---
+title: "**Raport**"
+output: 
+  pdf_document:
+---
+
+# Wprowadzenie
+W tym raporcie analizujemy dane z bazy danych dotyczące wycieczek, uwzględniając następujące pytania:  
+1. Jakie są najpopularniejsze rodzaje wycieczek, porównaj koszta i zyski, czy są opłacalne?  
+2. Ilu klientów było obsłużonych w każdym miesiącu działalności firmy?  
+3. Jaki był najczęściej wybierany kierunek w 2023 roku?  
+4. Który pracownik sprzedał najwięcej wycieczek i ile?  
+5. Jaki jest średni koszt organizacji wycieczek tej samej kategorii?  
+6. Która z kategorii wycieczek ma największy udział procentowy w przychodach firmy?
+
+---
+
+```{r setup, include=FALSE}
+# Ładowanie bibliotek
+library(DBI)
+library(RMariaDB)
+library(knitr)
+library(dplyr)
+
+con <- dbConnect(
+  MariaDB(),
+  dbname = "team27",
+  host = "giniewicz.it",
+  user = "team27",
+  password = "te@mzazt"
+)
+
+```{r echo=FALSE, include=TRUE, results='asis'}
+## Pytanie 1
+query1 <- "
+SELECT 
+    rw.nazwa AS nazwa_wycieczki,
+    rw.kierunek AS kierunek_wycieczki,
+    SUM(w.liczba_uczestnikow) AS liczba_uczestnikow
+FROM 
+    Rodzaje_wycieczek rw
+LEFT JOIN 
+    Wyjazdy w ON rw.id_rodzaj = w.id_rodzaj
+GROUP BY 
+    rw.id_rodzaj, rw.nazwa, rw.kierunek
+ORDER BY 
+    liczba_uczestnikow DESC;
+"
+
+# Wykonanie zapytania
+result1 <- dbGetQuery(con, query1)
+
+# Wyświetlenie wyników
+kable(result1, caption = "Najpopularniejsze rodzaje wycieczek")
+
+## Pytanie 1 ciąg dalszy
+query1.2 <- "
+SELECT 
+    rw.nazwa AS rodzaj_wycieczki,
+    rw.kierunek AS kierunek_wycieczki,
+    SUM(CASE WHEN tf.typ_transakcji = 'Przychód' THEN tf.kwota ELSE 0 END) AS przychod,
+    SUM(CASE WHEN tf.typ_transakcji = 'Wydatek' THEN tf.kwota ELSE 0 END) AS wydatki,
+    (SUM(CASE WHEN tf.typ_transakcji = 'Przychód' THEN tf.kwota ELSE 0 END) -
+     SUM(CASE WHEN tf.typ_transakcji = 'Wydatek' THEN tf.kwota ELSE 0 END)) AS zysk,
+    ROUND(
+        (SUM(CASE WHEN tf.typ_transakcji = 'Przychód' THEN tf.kwota ELSE 0 END) -
+         SUM(CASE WHEN tf.typ_transakcji = 'Wydatek' THEN tf.kwota ELSE 0 END)) / 
+        NULLIF(SUM(CASE WHEN tf.typ_transakcji = 'Wydatek' THEN tf.kwota ELSE 0 END), 0) * 100, 
+        2
+    ) AS rentownosc_procentowa
+FROM 
+    Rodzaje_wycieczek rw
+JOIN 
+    Wyjazdy w ON rw.id_rodzaj = w.id_rodzaj
+JOIN 
+    Transakcje_finansowe tf ON w.id_wyjazd = tf.id_wyjazd
+GROUP BY 
+    rw.nazwa, rw.kierunek
+ORDER BY 
+    rentownosc_procentowa DESC;
+"
+
+# Wykonanie zapytania
+result1.2 <- dbGetQuery(con, query1.2)
+
+kable(result1.2, caption = "Przychody, wydatki, zysk i rentowność wycieczek")
+
+
+## Pytanie 2
+query2 <- "
+SELECT 
+    DATE_FORMAT(data_wyjazdu, '%Y-%m') AS rok_miesiac,
+    SUM(liczba_uczestnikow) AS liczba_klientow
+FROM 
+    Wyjazdy
+GROUP BY 
+    rok_miesiac
+ORDER BY 
+    rok_miesiac;
+"
+
+# Wykonanie zapytania
+result2 <- dbGetQuery(con, query2)
+
+# Wyświetlenie wyników
+kable(result2, caption = "Obsłużeni klienci w każdym miesiącu działalności firmy")
+
+## Pytanie 3
+query3 <- "
+SELECT 
+    r.kierunek,
+    SUM(w.liczba_uczestnikow) AS liczba_uczestnikow
+FROM 
+    Wyjazdy w
+JOIN 
+    Rodzaje_wycieczek r ON w.id_rodzaj = r.id_rodzaj
+WHERE 
+    YEAR(w.data_wyjazdu) = 2023
+GROUP BY 
+    r.kierunek
+ORDER BY 
+    liczba_uczestnikow DESC
+LIMIT 1;
+"
+
+# Wykonanie zapytania
+result3 <- dbGetQuery(con, query3)
+
+# Wyświetlenie wyników
+kable(result3, caption = "Najczęściej wybierany kierunek w 2023 roku")
+
+## Pytanie 4
+query4 <- "
+SELECT p.imie, p.nazwisko, COUNT(w.id_wyjazd) AS liczba_wycieczek
+FROM Pracownicy p
+JOIN Wyjazdy w ON p.id_pracownik = w.id_pracownik
+GROUP BY p.id_pracownik
+ORDER BY liczba_wycieczek DESC
+LIMIT 1;
+"
+
+# Wykonanie zapytania
+result4 <- dbGetQuery(con, query4)
+
+# Wyświetlenie wyników
+kable(result4, caption = "Pracownik, który sprzedał najwięcej wycieczek")
+
+## Pytanie 5
+query5 <- "
+SELECT 
+    rw.nazwa AS nazwa_wycieczki,
+    AVG(ko.koszt) AS sredni_koszt_organizacji
+FROM 
+    Rodzaje_wycieczek rw
+JOIN 
+    Wyjazdy w ON rw.id_rodzaj = w.id_rodzaj
+JOIN 
+    Koszty_organizacji ko ON w.id_wyjazd = ko.id_wyjazd
+GROUP BY 
+    rw.nazwa
+ORDER BY 
+    sredni_koszt_organizacji DESC;
+"
+
+# Wykonanie zapytania
+result5 <- dbGetQuery(con, query5)
+
+# Wyświetlenie wyników
+kable(result5, caption = "Średni koszt organizacji wycieczek")
+
+## Pytanie 6
+query6 <- "
+SELECT 
+    rw.nazwa AS nazwa_wycieczki,
+    SUM(tf.kwota) AS suma_przychodow,
+    CONCAT(ROUND((SUM(tf.kwota) / (SELECT SUM(tf2.kwota) 
+                                  FROM Transakcje_finansowe tf2 
+                                  WHERE tf2.typ_transakcji = 'Przychód') * 100), 2), ' %') AS udzial_procentowy
+FROM 
+    Rodzaje_wycieczek rw
+JOIN 
+    Wyjazdy w ON rw.id_rodzaj = w.id_rodzaj
+JOIN 
+    Transakcje_finansowe tf ON w.id_wyjazd = tf.id_wyjazd
+WHERE 
+    tf.typ_transakcji = 'Przychód'
+GROUP BY 
+    rw.nazwa
+ORDER BY 
+    SUM(tf.kwota) DESC;
+"
+
+# Wykonanie zapytania
+result6 <- dbGetQuery(con, query6)
+
+# Wyświetlenie wyników
+kable(result6, caption = "Kategoria wycieczek z największym udziałem procentowym w przychodach")
+
+# Zamykanie połączenia z bazą danych
+dbDisconnect(con)
